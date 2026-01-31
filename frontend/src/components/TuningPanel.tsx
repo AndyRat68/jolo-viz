@@ -1,5 +1,10 @@
 import type { ChangeEvent } from "react";
-import type { TrackParams } from "../types";
+import type { GraphCategoryVisible, TrackParams } from "../types";
+import { GRAPH_CATEGORY_KEYS } from "../types";
+
+function capitalizeLabel(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 interface TuningPanelProps {
   params: TrackParams;
@@ -8,12 +13,12 @@ interface TuningPanelProps {
   showTrackIds: boolean;
   onShowLabelsChange: (v: boolean) => void;
   onShowTrackIdsChange: (v: boolean) => void;
-  overlayDelaySec: number;
-  onOverlayDelayChange: (v: number) => void;
   graphHeightRatio: number;
   onGraphHeightRatioChange: (v: number) => void;
   audioGraphHeightRatio: number;
   onAudioGraphHeightRatioChange: (v: number) => void;
+  graphCategoryVisible: GraphCategoryVisible;
+  onGraphCategoryChange: (key: string, visible: boolean) => void;
   showSaliency: boolean;
   onShowSaliencyChange: (v: boolean) => void;
   onApply: () => void;
@@ -28,12 +33,12 @@ export function TuningPanel({
   showTrackIds,
   onShowLabelsChange,
   onShowTrackIdsChange,
-  overlayDelaySec,
-  onOverlayDelayChange,
   graphHeightRatio,
   onGraphHeightRatioChange,
   audioGraphHeightRatio,
   onAudioGraphHeightRatioChange,
+  graphCategoryVisible,
+  onGraphCategoryChange,
   showSaliency,
   onShowSaliencyChange,
   onApply,
@@ -104,10 +109,10 @@ export function TuningPanel({
           }
           disabled={disabled}
         >
-          <option value="yolo11n">YOLO11n</option>
-          <option value="yolo11s">YOLO11s</option>
-          <option value="yolo8n">YOLO8n</option>
-          <option value="yolo8s">YOLO8s</option>
+          <option value="yolo11n">11n</option>
+          <option value="yolo11s">11s</option>
+          <option value="yolo8n">8n</option>
+          <option value="yolo8s">8s</option>
         </select>
       </div>
       <div className="control-group checkbox-group">
@@ -173,21 +178,21 @@ export function TuningPanel({
         </label>
       </div>
       <div className="control-group">
-        <label>
-          Overlay delay (s)
-          <input
-            type="range"
-            min={0}
-            max={3}
-            step={0.1}
-            value={overlayDelaySec}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              onOverlayDelayChange(Number(e.target.value))
-            }
-            disabled={disabled}
-          />
-          <span className="value">{overlayDelaySec.toFixed(1)}s</span>
-        </label>
+        <span className="control-label">Graph categories</span>
+        <div className="checkbox-group checkbox-list checkbox-list-scroll">
+          {GRAPH_CATEGORY_KEYS.map((key) => (
+            <label key={key}>
+              <input
+                type="checkbox"
+                checked={graphCategoryVisible[key] !== false}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  onGraphCategoryChange(key, e.target.checked)
+                }
+              />
+              {capitalizeLabel(key)}
+            </label>
+          ))}
+        </div>
       </div>
       <div className="control-group">
         <label>

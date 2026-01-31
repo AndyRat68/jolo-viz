@@ -1,5 +1,5 @@
 """
-Jolo Video Tracker – local Python app. No server.
+HeyCompanion Video Analysis – local Python app. No server.
 Open an MP4, run YOLO tracking, play video with overlay. Tuning panel to re-run with new params.
 Models download on first use and are cached for reuse.
 Uses VLC for playback when available (faster); otherwise OpenCV + Tkinter.
@@ -128,7 +128,7 @@ def _hue_to_rgb(hue_deg):
 class App:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Jolo Video Tracker")
+        self.root.title("HeyCompanion Video Analysis")
         self.root.minsize(800, 500)
 
         self.video_path = None

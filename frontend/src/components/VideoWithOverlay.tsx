@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { TrackResult } from "../types";
+import { COCO_CLASS_NAMES } from "../types";
 
 const TRAIL_LEN = 20;
 /** Rolling graph: window ± this many seconds around current time. */
@@ -7,42 +8,82 @@ const GRAPH_WINDOW_SEC = 2;
 const GRAPH_MIN_HEIGHT = 24;
 /** Default height ratio (0–1) gives ~80px when display height is ~400. */
 const GRAPH_HEIGHT_RATIO_DEFAULT = 0.2;
-/** COCO-style categories for count graph (label, class names, stroke/fill color). */
-const GRAPH_CATEGORIES: Array<{
+
+type GraphCategory = {
   label: string;
   classNames: Set<string>;
   stroke: string;
   fillRgba: string;
-}> = [
-  {
-    label: "People",
-    classNames: new Set(["person"]),
-    stroke: "#e74c3c",
-    fillRgba: "231, 76, 60",
-  },
-  {
-    label: "Vehicles",
-    classNames: new Set([
-      "car", "truck", "bus", "motorcycle", "bicycle", "airplane", "train", "boat",
-    ]),
-    stroke: "#3498db",
-    fillRgba: "52, 152, 219",
-  },
-  {
-    label: "Animals",
-    classNames: new Set([
-      "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",
-    ]),
-    stroke: "#27ae60",
-    fillRgba: "39, 174, 96",
-  },
-  {
+};
+
+/** Hue (0–360) to hex and rgba string. */
+function hueToStrokeAndRgba(hue: number): { stroke: string; fillRgba: string } {
+  const h = hue / 360;
+  const s = 0.7;
+  const l = 0.5;
+  let r: number, g: number, b: number;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hueToRgb(p, q, h + 1 / 3);
+    g = hueToRgb(p, q, h);
+    b = hueToRgb(p, q, h - 1 / 3);
+  }
+  const rr = Math.round(r * 255);
+  const gg = Math.round(g * 255);
+  const bb = Math.round(b * 255);
+  return {
+    stroke: `#${rr.toString(16).padStart(2, "0")}${gg.toString(16).padStart(2, "0")}${bb.toString(16).padStart(2, "0")}`,
+    fillRgba: `${rr}, ${gg}, ${bb}`,
+  };
+}
+function hueToRgb(p: number, q: number, t: number): number {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+
+function capitalizeLabel(name: string): string {
+  return name.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Build graph categories: one per COCO class + Other. */
+function buildGraphCategories(): GraphCategory[] {
+  const list: GraphCategory[] = [];
+  for (let i = 0; i < COCO_CLASS_NAMES.length; i++) {
+    const name = COCO_CLASS_NAMES[i];
+    const { stroke, fillRgba } = hueToStrokeAndRgba((i * 137.508) % 360);
+    list.push({
+      label: name,
+      classNames: new Set([name]),
+      stroke,
+      fillRgba,
+    });
+  }
+  list.push({
     label: "Other",
-    classNames: new Set(), // "other" = any class not in the above
+    classNames: new Set(),
     stroke: "#95a5a6",
     fillRgba: "149, 165, 166",
-  },
-];
+  });
+  return list;
+}
+
+const GRAPH_CATEGORIES = buildGraphCategories();
+/** Map detection class name (lowercase) to category index. */
+const CLASS_NAME_TO_INDEX = (() => {
+  const m = new Map<string, number>();
+  for (let c = 0; c < GRAPH_CATEGORIES.length; c++) {
+    GRAPH_CATEGORIES[c].classNames.forEach((n) => m.set(n.toLowerCase(), c));
+  }
+  return m;
+})();
+const OTHER_INDEX = GRAPH_CATEGORIES.length - 1;
 
 /** Audio level series (same chart, 0–1 scale). */
 const AUDIO_GRAPH_STROKE = "#f39c12";
@@ -144,7 +185,8 @@ function drawCountGraph(
   displayHeight: number,
   graphHeightRatio: number,
   audioGraphHeightRatio: number,
-  audioSamples: { time: number; level: number }[]
+  audioSamples: { time: number; level: number }[],
+  graphCategoryVisible: Record<string, boolean>
 ): void {
   const graphHeight = Math.round(
     GRAPH_MIN_HEIGHT + graphHeightRatio * (displayHeight - GRAPH_MIN_HEIGHT)
@@ -164,22 +206,17 @@ function drawCountGraph(
     if (fr) {
       for (let i = 0; i < (fr.names?.length ?? 0); i++) {
         const name = (fr.names[i] ?? "").toLowerCase();
-        let assigned = false;
-        for (let c = 0; c < GRAPH_CATEGORIES.length - 1; c++) {
-          if (GRAPH_CATEGORIES[c].classNames.has(name)) {
-            counts[c]++;
-            assigned = true;
-            break;
-          }
-        }
-        if (!assigned) counts[GRAPH_CATEGORIES.length - 1]++;
+        const idx = CLASS_NAME_TO_INDEX.get(name) ?? OTHER_INDEX;
+        counts[idx]++;
       }
     }
     categoryCounts.forEach((arr, c) => arr.push(counts[c]));
   }
   const maxCount = Math.max(
     1,
-    ...categoryCounts.flat()
+    ...GRAPH_CATEGORIES.flatMap((_, c) =>
+      graphCategoryVisible[GRAPH_CATEGORIES[c].label] ? categoryCounts[c] : []
+    ).flat()
   );
   const graphTop = displayHeight - graphHeight;
   const graphLeft = 0;
@@ -223,6 +260,7 @@ function drawCountGraph(
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let c = 0; c < GRAPH_CATEGORIES.length; c++) {
+      if (!graphCategoryVisible[GRAPH_CATEGORIES[c].label]) continue;
       const cat = GRAPH_CATEGORIES[c];
       const counts = categoryCounts[c];
       const grad = ctx.createLinearGradient(0, y0, 0, y1);
@@ -239,6 +277,7 @@ function drawCountGraph(
       ctx.fill();
     }
     for (let c = 0; c < GRAPH_CATEGORIES.length; c++) {
+      if (!graphCategoryVisible[GRAPH_CATEGORIES[c].label]) continue;
       const cat = GRAPH_CATEGORIES[c];
       const counts = categoryCounts[c];
       ctx.strokeStyle = cat.stroke;
@@ -250,6 +289,7 @@ function drawCountGraph(
       ctx.stroke();
     }
     // Audio: prefer pre-scanned levels; fall back to live. Draw only up to current time (flat after) so it looks live.
+    const showAudio = graphCategoryVisible["Audio"] !== false;
     const preScanned = trackResult.audio_levels && trackResult.audio_levels.length > 0;
     const audioLevels = preScanned
       ? times.map((t) => {
@@ -258,61 +298,67 @@ function drawCountGraph(
           return trackResult.audio_levels![Math.max(0, idx)] ?? 0;
         })
       : times.map((t) => (t > syncTime ? 0 : getAudioLevelAt(audioSamples, t)));
-    const audioTopY = audioBaselineY - audioRangeH;
-    const audioGrad = ctx.createLinearGradient(0, audioTopY, 0, audioBaselineY);
-    audioGrad.addColorStop(0, `rgba(${AUDIO_GRAPH_FILL_RGBA}, 0.35)`);
-    audioGrad.addColorStop(1, `rgba(${AUDIO_GRAPH_FILL_RGBA}, 0)`);
-    ctx.fillStyle = audioGrad;
-    ctx.beginPath();
-    ctx.moveTo(toX(times[0]), audioBaselineY);
-    for (let i = 0; i < times.length; i++) {
-      ctx.lineTo(toX(times[i]), toYAudio(audioLevels[i]));
-    }
-    ctx.lineTo(toX(times[times.length - 1]), audioBaselineY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = AUDIO_GRAPH_STROKE;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(toX(times[0]), toYAudio(audioLevels[0]));
-    for (let i = 1; i < times.length; i++) {
-      ctx.lineTo(toX(times[i]), toYAudio(audioLevels[i]));
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Center marker: vertical bar at playhead showing current audio level (follows the graph)
-    const levelAtSyncTime = preScanned
-      ? (trackResult.audio_levels![Math.min(Math.max(0, Math.floor(syncTime * fps)), trackResult.audio_levels!.length - 1)] ?? 0)
-      : getAudioLevelAt(audioSamples, syncTime);
-    const markerY = toYAudio(levelAtSyncTime);
-    if (curX >= x0 && curX <= x1) {
-      ctx.strokeStyle = AUDIO_GRAPH_STROKE;
-      ctx.lineWidth = 3;
+    if (showAudio) {
+      const audioTopY = audioBaselineY - audioRangeH;
+      const audioGrad = ctx.createLinearGradient(0, audioTopY, 0, audioBaselineY);
+      audioGrad.addColorStop(0, `rgba(${AUDIO_GRAPH_FILL_RGBA}, 0.35)`);
+      audioGrad.addColorStop(1, `rgba(${AUDIO_GRAPH_FILL_RGBA}, 0)`);
+      ctx.fillStyle = audioGrad;
       ctx.beginPath();
-      ctx.moveTo(curX, audioBaselineY);
-      ctx.lineTo(curX, markerY);
-      ctx.stroke();
-      ctx.fillStyle = AUDIO_GRAPH_STROKE;
-      ctx.beginPath();
-      ctx.arc(curX, markerY, 4, 0, Math.PI * 2);
+      ctx.moveTo(toX(times[0]), audioBaselineY);
+      for (let i = 0; i < times.length; i++) {
+        ctx.lineTo(toX(times[i]), toYAudio(audioLevels[i]));
+      }
+      ctx.lineTo(toX(times[times.length - 1]), audioBaselineY);
+      ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = AUDIO_GRAPH_STROKE;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(toX(times[0]), toYAudio(audioLevels[0]));
+      for (let i = 1; i < times.length; i++) {
+        ctx.lineTo(toX(times[i]), toYAudio(audioLevels[i]));
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Center marker: vertical bar at playhead showing current audio level (follows the graph)
+      const levelAtSyncTime = preScanned
+        ? (trackResult.audio_levels![Math.min(Math.max(0, Math.floor(syncTime * fps)), trackResult.audio_levels!.length - 1)] ?? 0)
+        : getAudioLevelAt(audioSamples, syncTime);
+      const markerY = toYAudio(levelAtSyncTime);
+      if (curX >= x0 && curX <= x1) {
+        ctx.strokeStyle = AUDIO_GRAPH_STROKE;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(curX, audioBaselineY);
+        ctx.lineTo(curX, markerY);
+        ctx.stroke();
+        ctx.fillStyle = AUDIO_GRAPH_STROKE;
+        ctx.beginPath();
+        ctx.arc(curX, markerY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
   }
   ctx.font = "11px system-ui, sans-serif";
   let legendX = x0;
   for (let c = 0; c < GRAPH_CATEGORIES.length; c++) {
+    if (!graphCategoryVisible[GRAPH_CATEGORIES[c].label]) continue;
+    const label = capitalizeLabel(GRAPH_CATEGORIES[c].label);
     ctx.fillStyle = GRAPH_CATEGORIES[c].stroke;
-    ctx.fillText(GRAPH_CATEGORIES[c].label, legendX, graphTop + 14);
-    legendX += ctx.measureText(GRAPH_CATEGORIES[c].label).width + 10;
+    ctx.fillText(label, legendX, graphTop + 14);
+    legendX += ctx.measureText(label).width + 10;
   }
-  ctx.fillStyle = AUDIO_GRAPH_STROKE;
-  ctx.fillText("Audio", legendX, graphTop + 14);
-  legendX += ctx.measureText("Audio").width + 10;
+  if (graphCategoryVisible["Audio"] !== false) {
+    ctx.fillStyle = AUDIO_GRAPH_STROKE;
+    ctx.fillText("Audio", legendX, graphTop + 14);
+    legendX += ctx.measureText("Audio").width + 10;
+  }
   ctx.fillStyle = "rgba(255,255,255,0.5)";
   ctx.fillText(`${tMin.toFixed(1)}s – ${tMax.toFixed(1)}s`, x1 - 70, graphTop + 14);
 }
@@ -330,6 +376,8 @@ interface VideoWithOverlayProps {
   graphHeightRatio: number;
   /** Audio graph vertical scale within the chart (0 = flat, 1 = full chart height). */
   audioGraphHeightRatio: number;
+  /** Which graph categories (People, Vehicles, Animals, Other, Audio) are visible. */
+  graphCategoryVisible: Record<string, boolean>;
   showSaliency: boolean;
   onVideoRef?: (el: HTMLVideoElement | null) => void;
 }
@@ -344,6 +392,7 @@ export function VideoWithOverlay({
   overlayDelaySec,
   graphHeightRatio,
   audioGraphHeightRatio,
+  graphCategoryVisible,
   showSaliency,
   onVideoRef,
 }: VideoWithOverlayProps) {
@@ -497,7 +546,7 @@ export function VideoWithOverlay({
     ctx.clearRect(0, 0, displayWidth, displayHeight);
 
     if (!frame) {
-      drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples);
+      drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples, graphCategoryVisible);
       return;
     }
 
@@ -572,8 +621,8 @@ export function VideoWithOverlay({
         }
       }
     }
-    drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples);
-  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, showSaliency, sampleAudioLevel]);
+    drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples, graphCategoryVisible);
+  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, graphCategoryVisible, showSaliency, sampleAudioLevel]);
 
   // Redraw overlay every display frame (smooth) instead of only on timeupdate (~4/sec).
   useEffect(() => {

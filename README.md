@@ -1,4 +1,4 @@
-# Jolo Video Tracker
+# HeyCompanion Video Analysis
 
 MP4 video with YOLO object tracking overlay. **React + FastAPI** (web app).
 

@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { uploadVideo, runTrack, videoUrl, type TrackProgress } from "./api";
-import { DEFAULT_TRACK_PARAMS, type TrackParams, type TrackResult } from "./types";
+import { DEFAULT_GRAPH_CATEGORY_VISIBLE, DEFAULT_TRACK_PARAMS, type GraphCategoryVisible, type TrackParams, type TrackResult } from "./types";
 import { VideoWithOverlay } from "./components/VideoWithOverlay";
 import { SpeedControl } from "./components/SpeedControl";
 import { TuningPanel } from "./components/TuningPanel";
@@ -12,9 +12,9 @@ function App() {
   const [params, setParams] = useState<TrackParams>(DEFAULT_TRACK_PARAMS);
   const [showLabels, setShowLabels] = useState(true);
   const [showTrackIds, setShowTrackIds] = useState(true);
-  const [overlayDelaySec, setOverlayDelaySec] = useState(0.7);
   const [graphHeightRatio, setGraphHeightRatio] = useState(0.2);
-  const [audioGraphHeightRatio, setAudioGraphHeightRatio] = useState(1);
+  const [audioGraphHeightRatio, setAudioGraphHeightRatio] = useState(0.2);
+  const [graphCategoryVisible, setGraphCategoryVisible] = useState<GraphCategoryVisible>(() => ({ ...DEFAULT_GRAPH_CATEGORY_VISIBLE }));
   const [showSaliency, setShowSaliency] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -79,7 +79,10 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Jolo Video Tracker</h1>
+        <div className="app-brand">
+          <img src="/companion-logo.png" alt="" className="app-logo" />
+          <h1>Video Analyzer</h1>
+        </div>
         <div className="upload-row">
           <label className="file-label">
             <input
@@ -135,9 +138,10 @@ function App() {
             showLabels={showLabels}
             showTrackIds={showTrackIds}
             playbackRate={playbackRate}
-            overlayDelaySec={overlayDelaySec}
+            overlayDelaySec={0}
             graphHeightRatio={graphHeightRatio}
             audioGraphHeightRatio={audioGraphHeightRatio}
+            graphCategoryVisible={graphCategoryVisible}
             showSaliency={showSaliency}
           />
           {loading && (
@@ -158,12 +162,14 @@ function App() {
             showTrackIds={showTrackIds}
             onShowLabelsChange={setShowLabels}
             onShowTrackIdsChange={setShowTrackIds}
-            overlayDelaySec={overlayDelaySec}
-            onOverlayDelayChange={setOverlayDelaySec}
             graphHeightRatio={graphHeightRatio}
             onGraphHeightRatioChange={setGraphHeightRatio}
             audioGraphHeightRatio={audioGraphHeightRatio}
             onAudioGraphHeightRatioChange={setAudioGraphHeightRatio}
+            graphCategoryVisible={graphCategoryVisible}
+            onGraphCategoryChange={(key, visible) =>
+              setGraphCategoryVisible((prev) => ({ ...prev, [key]: visible }))
+            }
             showSaliency={showSaliency}
             onShowSaliencyChange={setShowSaliency}
             onApply={handleApply}

@@ -10,8 +10,28 @@
   margin-bottom: 1rem;
 }
 
+.app-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  width: 100%;
+  min-height: 80px;
+}
+
+.app-logo {
+  height: 80px;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+}
+
 .app-header h1 {
-  margin: 0 0 0.75rem 0;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
   font-size: 1.5rem;
 }
 
@@ -173,6 +193,29 @@
 
 .control-group {
   margin-bottom: 1rem;
+}
+
+.control-group .control-label {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.control-group .checkbox-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.control-group .checkbox-list-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.control-group .checkbox-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .control-group label {

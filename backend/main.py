@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from tracking import run_track
 
-app = FastAPI(title="Jolo Video Tracker API")
+app = FastAPI(title="HeyCompanion Video Analysis API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
