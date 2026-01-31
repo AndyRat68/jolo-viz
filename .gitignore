@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.yolo_weights/
+*.pt
+
+# Backend uploads (user-uploaded videos)
+backend/uploads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
