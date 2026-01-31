@@ -12,9 +12,10 @@ function App() {
   const [params, setParams] = useState<TrackParams>(DEFAULT_TRACK_PARAMS);
   const [showLabels, setShowLabels] = useState(true);
   const [showTrackIds, setShowTrackIds] = useState(true);
-  const [overlayDelaySec, setOverlayDelaySec] = useState(1);
+  const [overlayDelaySec, setOverlayDelaySec] = useState(0.7);
   const [graphHeightRatio, setGraphHeightRatio] = useState(0.2);
   const [audioGraphHeightRatio, setAudioGraphHeightRatio] = useState(1);
+  const [showSaliency, setShowSaliency] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +107,7 @@ function App() {
               {uploading
                 ? `Uploading… ${uploadPercent != null ? uploadPercent + "%" : ""}`
                 : loading && trackProgress
-                  ? `Frame ${trackProgress.current_frame} / ${trackProgress.total_frames}`
+                  ? (trackProgress.message || `Frame ${trackProgress.current_frame} / ${trackProgress.total_frames}`)
                   : "Running tracking…"}
             </span>
             <progress
@@ -137,6 +138,7 @@ function App() {
             overlayDelaySec={overlayDelaySec}
             graphHeightRatio={graphHeightRatio}
             audioGraphHeightRatio={audioGraphHeightRatio}
+            showSaliency={showSaliency}
           />
           {loading && (
             <div className="loading-overlay">
@@ -162,6 +164,8 @@ function App() {
             onGraphHeightRatioChange={setGraphHeightRatio}
             audioGraphHeightRatio={audioGraphHeightRatio}
             onAudioGraphHeightRatioChange={setAudioGraphHeightRatio}
+            showSaliency={showSaliency}
+            onShowSaliencyChange={setShowSaliency}
             onApply={handleApply}
             loading={loading}
             disabled={!videoId}

@@ -14,6 +14,8 @@ interface TuningPanelProps {
   onGraphHeightRatioChange: (v: number) => void;
   audioGraphHeightRatio: number;
   onAudioGraphHeightRatioChange: (v: number) => void;
+  showSaliency: boolean;
+  onShowSaliencyChange: (v: boolean) => void;
   onApply: () => void;
   loading?: boolean;
   disabled?: boolean;
@@ -32,6 +34,8 @@ export function TuningPanel({
   onGraphHeightRatioChange,
   audioGraphHeightRatio,
   onAudioGraphHeightRatioChange,
+  showSaliency,
+  onShowSaliencyChange,
   onApply,
   loading,
   disabled,
@@ -141,6 +145,31 @@ export function TuningPanel({
             }
           />
           Show track IDs
+        </label>
+      </div>
+      <div className="control-group checkbox-group">
+        <label>
+          <input
+            type="checkbox"
+            checked={params.include_saliency ?? false}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              update({ include_saliency: e.target.checked })
+            }
+            disabled={disabled}
+          />
+          Include saliency (slower)
+        </label>
+      </div>
+      <div className="control-group checkbox-group">
+        <label>
+          <input
+            type="checkbox"
+            checked={showSaliency}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              onShowSaliencyChange(e.target.checked)
+            }
+          />
+          Show saliency heatmap
         </label>
       </div>
       <div className="control-group">

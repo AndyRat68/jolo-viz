@@ -55,6 +55,70 @@ function trackIdToHue(id: number | null): number {
   return (id * 137.508) % 360;
 }
 
+/** Jet-like colormap: 0 -> blue, 0.5 -> green/yellow, 1 -> red. Returns rgba string. */
+function saliencyToColor(v: number): string {
+  const x = Math.max(0, Math.min(1, v));
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (x < 0.25) {
+    r = 0;
+    g = 0;
+    b = 128 + 127 * (x / 0.25);
+  } else if (x < 0.5) {
+    r = 0;
+    g = 255 * ((x - 0.25) / 0.25);
+    b = 255;
+  } else if (x < 0.75) {
+    r = 255 * ((x - 0.5) / 0.25);
+    g = 255;
+    b = 255 - 255 * ((x - 0.5) / 0.25);
+  } else {
+    r = 255;
+    g = 255 - 255 * ((x - 0.75) / 0.25);
+    b = 0;
+  }
+  return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},0.85)`;
+}
+
+function drawSaliencyHeatmap(
+  ctx: CanvasRenderingContext2D,
+  saliency: number[][],
+  displayWidth: number,
+  displayHeight: number
+): void {
+  const rows = saliency.length;
+  const cols = rows > 0 ? saliency[0].length : 0;
+  if (rows === 0 || cols === 0) return;
+  const heatCanvas = document.createElement("canvas");
+  heatCanvas.width = cols;
+  heatCanvas.height = rows;
+  const hCtx = heatCanvas.getContext("2d");
+  if (!hCtx) return;
+  const imgData = hCtx.createImageData(cols, rows);
+  for (let y = 0; y < rows; y++) {
+    const row = saliency[y];
+    if (!row) continue;
+    for (let x = 0; x < cols; x++) {
+      const v = row[x] ?? 0;
+      const c = saliencyToColor(v);
+      const match = c.match(/rgba?\((\d+),(\d+),(\d+),([\d.]+)\)/);
+      if (match) {
+        const i = (y * cols + x) * 4;
+        imgData.data[i] = parseInt(match[1], 10);
+        imgData.data[i + 1] = parseInt(match[2], 10);
+        imgData.data[i + 2] = parseInt(match[3], 10);
+        imgData.data[i + 3] = Math.round(255 * parseFloat(match[4]));
+      }
+    }
+  }
+  hCtx.putImageData(imgData, 0, 0);
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  ctx.drawImage(heatCanvas, 0, 0, cols, rows, 0, 0, displayWidth, displayHeight);
+  ctx.restore();
+}
+
 function getAudioLevelAt(
   audioSamples: { time: number; level: number }[],
   t: number
@@ -136,11 +200,14 @@ function drawCountGraph(
   const chartH = y1 - y0;
   const toX = (t: number) => x0 + ((t - tMin) / (tMax - tMin || 1)) * chartW;
   const toY = (c: number) => y1 - (c / maxCount) * chartH;
-  // Audio at 100% = full video height; 0% = flat at bottom
+  // Audio at 100% = full video height; 0% = flat at bottom. Boost display by 5x so small levels are visible.
+  const AUDIO_LEVEL_BOOST = 5;
   const audioRangeH = displayHeight * Math.max(0, Math.min(1, audioGraphHeightRatio));
   const audioBaselineY = displayHeight;
-  const toYAudio = (level: number) =>
-    audioBaselineY - Math.max(0, Math.min(1, level)) * audioRangeH;
+  const toYAudio = (level: number) => {
+    const boosted = Math.min(1, level * AUDIO_LEVEL_BOOST);
+    return audioBaselineY - Math.max(0, boosted) * audioRangeH;
+  };
   const curX = toX(syncTime);
   if (curX >= x0 && curX <= x1) {
     ctx.strokeStyle = "rgba(255,255,255,0.5)";
@@ -182,8 +249,15 @@ function drawCountGraph(
       }
       ctx.stroke();
     }
-    // Audio level (0–1 scale); at 100% slider spans full video height
-    const audioLevels = times.map((t) => getAudioLevelAt(audioSamples, t));
+    // Audio: prefer pre-scanned levels; fall back to live. Draw only up to current time (flat after) so it looks live.
+    const preScanned = trackResult.audio_levels && trackResult.audio_levels.length > 0;
+    const audioLevels = preScanned
+      ? times.map((t) => {
+          if (t > syncTime) return 0;
+          const idx = Math.min(Math.floor(t * fps), trackResult.audio_levels!.length - 1);
+          return trackResult.audio_levels![Math.max(0, idx)] ?? 0;
+        })
+      : times.map((t) => (t > syncTime ? 0 : getAudioLevelAt(audioSamples, t)));
     const audioTopY = audioBaselineY - audioRangeH;
     const audioGrad = ctx.createLinearGradient(0, audioTopY, 0, audioBaselineY);
     audioGrad.addColorStop(0, `rgba(${AUDIO_GRAPH_FILL_RGBA}, 0.35)`);
@@ -207,6 +281,27 @@ function drawCountGraph(
     }
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Center marker: vertical bar at playhead showing current audio level (follows the graph)
+    const levelAtSyncTime = preScanned
+      ? (trackResult.audio_levels![Math.min(Math.max(0, Math.floor(syncTime * fps)), trackResult.audio_levels!.length - 1)] ?? 0)
+      : getAudioLevelAt(audioSamples, syncTime);
+    const markerY = toYAudio(levelAtSyncTime);
+    if (curX >= x0 && curX <= x1) {
+      ctx.strokeStyle = AUDIO_GRAPH_STROKE;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(curX, audioBaselineY);
+      ctx.lineTo(curX, markerY);
+      ctx.stroke();
+      ctx.fillStyle = AUDIO_GRAPH_STROKE;
+      ctx.beginPath();
+      ctx.arc(curX, markerY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
   ctx.font = "11px system-ui, sans-serif";
   let legendX = x0;
@@ -235,6 +330,7 @@ interface VideoWithOverlayProps {
   graphHeightRatio: number;
   /** Audio graph vertical scale within the chart (0 = flat, 1 = full chart height). */
   audioGraphHeightRatio: number;
+  showSaliency: boolean;
   onVideoRef?: (el: HTMLVideoElement | null) => void;
 }
 
@@ -248,6 +344,7 @@ export function VideoWithOverlay({
   overlayDelaySec,
   graphHeightRatio,
   audioGraphHeightRatio,
+  showSaliency,
   onVideoRef,
 }: VideoWithOverlayProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -273,7 +370,8 @@ export function VideoWithOverlay({
     video.playbackRate = playbackRate;
   }, [playbackRate]);
 
-  // Web Audio: create context and analyser on first user interaction (click or play), resume when suspended
+  // Web Audio: sum all channels (stereo + surround) with equal weight so background/foreground/all channels are monitored
+  const MAX_AUDIO_CHANNELS = 6; // stereo + 5.1
   const initAudioPipeline = useCallback(() => {
     const video = videoRef.current;
     if (!video || !video.src || analyserRef.current) return;
@@ -285,8 +383,20 @@ export function VideoWithOverlay({
       const analyser = ctx.createAnalyser();
       analyser.fftSize = AUDIO_ANALYSER_FFT_SIZE;
       analyser.smoothingTimeConstant = 0.5;
-      source.connect(analyser);
+      analyser.channelCount = 1;
+      analyser.channelCountMode = "explicit";
+
+      const splitter = ctx.createChannelSplitter(MAX_AUDIO_CHANNELS);
+      source.connect(splitter);
+      const gainPerChannel = 1 / MAX_AUDIO_CHANNELS;
+      for (let ch = 0; ch < MAX_AUDIO_CHANNELS; ch++) {
+        const gain = ctx.createGain();
+        gain.gain.value = gainPerChannel;
+        splitter.connect(gain, ch, 0);
+        gain.connect(analyser);
+      }
       analyser.connect(ctx.destination);
+
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
       mediaSourceRef.current = source;
@@ -391,6 +501,10 @@ export function VideoWithOverlay({
       return;
     }
 
+    if (showSaliency && frame.saliency && frame.saliency.length > 0) {
+      drawSaliencyHeatmap(ctx, frame.saliency, displayWidth, displayHeight);
+    }
+
     // Optional trails: collect centers per track_id from last TRAIL_LEN frames
     const trailByTrack: Map<number, { x: number; y: number }[]> = new Map();
     const startFrame = Math.max(0, frameIndex - TRAIL_LEN);
@@ -459,7 +573,7 @@ export function VideoWithOverlay({
       }
     }
     drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples);
-  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, sampleAudioLevel]);
+  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, showSaliency, sampleAudioLevel]);
 
   // Redraw overlay every display frame (smooth) instead of only on timeupdate (~4/sec).
   useEffect(() => {
@@ -492,7 +606,11 @@ export function VideoWithOverlay({
   }, [initAudioPipeline, resumeAudioContext]);
 
   return (
-    <div className="video-with-overlay" ref={containerRef}>
+    <div
+      className="video-with-overlay"
+      ref={containerRef}
+      onClick={handleVideoInteraction}
+    >
       <video
         ref={setRefs}
         src={videoUrl ?? undefined}
@@ -500,7 +618,6 @@ export function VideoWithOverlay({
         playsInline
         className="video-element"
         crossOrigin="anonymous"
-        onClick={handleVideoInteraction}
       />
       {trackResult && (
         <canvas

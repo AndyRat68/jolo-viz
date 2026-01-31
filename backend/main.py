@@ -40,6 +40,8 @@ class TrackParams(BaseModel):
     persist: bool = Field(True)
     model: str = Field("yolo11n")
     classes: Optional[List[int]] = Field(None)
+    include_saliency: bool = Field(True)
+    include_audio_levels: bool = Field(True)
 
 
 class TrackRequest(BaseModel):
@@ -71,16 +73,21 @@ async def get_video(video_id: str):
 
 
 def _run_track_job(job_id: str, path: Path, params: "TrackParams") -> None:
+    include_saliency = getattr(params, "include_saliency", False)
+    include_audio_levels = getattr(params, "include_audio_levels", True)
+    saliency_label = " + saliency" if include_saliency else ""
+    audio_label = " + audio scan" if include_audio_levels else ""
+
     def progress_callback(current_frame: int, total_frames: int) -> None:
         with _jobs_lock:
             if job_id in _jobs:
                 _jobs[job_id]["current_frame"] = current_frame
                 _jobs[job_id]["total_frames"] = total_frames
-                _jobs[job_id]["message"] = f"Frame {current_frame}/{total_frames}"
+                _jobs[job_id]["message"] = f"Frame {current_frame}/{total_frames}{saliency_label}{audio_label}"
 
     with _jobs_lock:
         _jobs[job_id]["status"] = "running"
-        _jobs[job_id]["message"] = "Starting…"
+        _jobs[job_id]["message"] = f"Starting…{saliency_label}{audio_label}" if (saliency_label or audio_label) else "Starting…"
 
     try:
         p = params
@@ -93,6 +100,8 @@ def _run_track_job(job_id: str, path: Path, params: "TrackParams") -> None:
             model=p.model,
             classes=p.classes,
             progress_callback=progress_callback,
+            include_saliency=p.include_saliency,
+            include_audio_levels=p.include_audio_levels,
         )
         with _jobs_lock:
             if job_id in _jobs:
