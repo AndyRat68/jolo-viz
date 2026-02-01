@@ -42,6 +42,7 @@ class TrackParams(BaseModel):
     classes: Optional[List[int]] = Field(None)
     include_saliency: bool = Field(True)
     include_audio_levels: bool = Field(True)
+    include_masks: bool = Field(True)
 
 
 class TrackRequest(BaseModel):
@@ -75,19 +76,21 @@ async def get_video(video_id: str):
 def _run_track_job(job_id: str, path: Path, params: "TrackParams") -> None:
     include_saliency = getattr(params, "include_saliency", False)
     include_audio_levels = getattr(params, "include_audio_levels", True)
+    include_masks = getattr(params, "include_masks", False)
     saliency_label = " + saliency" if include_saliency else ""
     audio_label = " + audio scan" if include_audio_levels else ""
+    masks_label = " + masks" if include_masks else ""
 
     def progress_callback(current_frame: int, total_frames: int) -> None:
         with _jobs_lock:
             if job_id in _jobs:
                 _jobs[job_id]["current_frame"] = current_frame
                 _jobs[job_id]["total_frames"] = total_frames
-                _jobs[job_id]["message"] = f"Frame {current_frame}/{total_frames}{saliency_label}{audio_label}"
+                _jobs[job_id]["message"] = f"Frame {current_frame}/{total_frames}{saliency_label}{audio_label}{masks_label}"
 
     with _jobs_lock:
         _jobs[job_id]["status"] = "running"
-        _jobs[job_id]["message"] = f"Starting…{saliency_label}{audio_label}" if (saliency_label or audio_label) else "Starting…"
+        _jobs[job_id]["message"] = f"Starting…{saliency_label}{audio_label}{masks_label}" if (saliency_label or audio_label or masks_label) else "Starting…"
 
     try:
         p = params
@@ -102,6 +105,7 @@ def _run_track_job(job_id: str, path: Path, params: "TrackParams") -> None:
             progress_callback=progress_callback,
             include_saliency=p.include_saliency,
             include_audio_levels=p.include_audio_levels,
+            include_masks=p.include_masks,
         )
         with _jobs_lock:
             if job_id in _jobs:

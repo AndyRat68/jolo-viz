@@ -379,6 +379,7 @@ interface VideoWithOverlayProps {
   /** Which graph categories (People, Vehicles, Animals, Other, Audio) are visible. */
   graphCategoryVisible: Record<string, boolean>;
   showSaliency: boolean;
+  showMasks: boolean;
   onVideoRef?: (el: HTMLVideoElement | null) => void;
 }
 
@@ -394,6 +395,7 @@ export function VideoWithOverlay({
   audioGraphHeightRatio,
   graphCategoryVisible,
   showSaliency,
+  showMasks,
   onVideoRef,
 }: VideoWithOverlayProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -585,6 +587,27 @@ export function VideoWithOverlay({
       ctx.stroke();
     });
 
+    if (showMasks && frame.masks && frame.masks.length > 0) {
+      const track_ids = frame.track_ids ?? [];
+      for (let i = 0; i < frame.masks.length; i++) {
+        const polygon = frame.masks[i];
+        if (!polygon || polygon.length < 2) continue;
+        const tid = track_ids[i] ?? null;
+        const hue = trackIdToHue(tid);
+        ctx.fillStyle = `hsla(${hue}, 85%, 55%, 0.35)`;
+        ctx.strokeStyle = `hsl(${hue}, 85%, 55%)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(polygon[0][0] * scaleX, polygon[0][1] * scaleY);
+        for (let p = 1; p < polygon.length; p++) {
+          ctx.lineTo(polygon[p][0] * scaleX, polygon[p][1] * scaleY);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     const { boxes, track_ids, names, scores } = frame;
     for (let i = 0; i < boxes.length; i++) {
       const [x1, y1, x2, y2] = boxes[i];
@@ -622,7 +645,7 @@ export function VideoWithOverlay({
       }
     }
     drawCountGraph(ctx, trackResult, fps, syncTime, displayWidth, displayHeight, graphHeightRatio, audioGraphHeightRatio, audioSamples, graphCategoryVisible);
-  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, graphCategoryVisible, showSaliency, sampleAudioLevel]);
+  }, [trackResult, fps, showLabels, showTrackIds, overlayDelaySec, graphHeightRatio, audioGraphHeightRatio, graphCategoryVisible, showSaliency, showMasks, sampleAudioLevel]);
 
   // Redraw overlay every display frame (smooth) instead of only on timeupdate (~4/sec).
   useEffect(() => {

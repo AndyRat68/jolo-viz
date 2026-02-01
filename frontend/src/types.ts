@@ -7,6 +7,7 @@ export interface TrackParams {
   classes?: number[] | null;
   include_saliency?: boolean;
   include_audio_levels?: boolean;
+  include_masks?: boolean;
 }
 
 export interface FrameResult {
@@ -17,6 +18,8 @@ export interface FrameResult {
   names: string[];
   /** Optional saliency heatmap (2D grid 0–1), e.g. 64×64 */
   saliency?: number[][];
+  /** Optional segmentation mask polygons; one per box, each polygon list of [x, y] points (pixel coords). */
+  masks?: number[][][];
 }
 
 export interface TrackResult {
@@ -59,4 +62,5 @@ export const DEFAULT_TRACK_PARAMS: TrackParams = {
   model: "yolo11n",
   include_saliency: true,
   include_audio_levels: true,
+  include_masks: true,
 };

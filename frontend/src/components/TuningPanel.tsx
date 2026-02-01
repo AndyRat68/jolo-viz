@@ -21,6 +21,8 @@ interface TuningPanelProps {
   onGraphCategoryChange: (key: string, visible: boolean) => void;
   showSaliency: boolean;
   onShowSaliencyChange: (v: boolean) => void;
+  showMasks: boolean;
+  onShowMasksChange: (v: boolean) => void;
   onApply: () => void;
   loading?: boolean;
   disabled?: boolean;
@@ -41,6 +43,8 @@ export function TuningPanel({
   onGraphCategoryChange,
   showSaliency,
   onShowSaliencyChange,
+  showMasks,
+  onShowMasksChange,
   onApply,
   loading,
   disabled,
@@ -175,6 +179,31 @@ export function TuningPanel({
             }
           />
           Show saliency heatmap
+        </label>
+      </div>
+      <div className="control-group checkbox-group">
+        <label>
+          <input
+            type="checkbox"
+            checked={params.include_masks ?? false}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              update({ include_masks: e.target.checked })
+            }
+            disabled={disabled}
+          />
+          Generate masks (segment model, slower)
+        </label>
+      </div>
+      <div className="control-group checkbox-group">
+        <label>
+          <input
+            type="checkbox"
+            checked={showMasks}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              onShowMasksChange(e.target.checked)
+            }
+          />
+          Show masks
         </label>
       </div>
       <div className="control-group">

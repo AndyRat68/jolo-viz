@@ -32,6 +32,14 @@ MODEL_ALIASES = {
     "yolo8n": "yolov8n.pt",
     "yolo8s": "yolov8s.pt",
 }
+# Segment model variants (used when include_masks=True); same keys as MODEL_ALIASES where seg exists.
+SEGMENT_MODEL_ALIASES = {
+    "yolo11n.pt": "yolo11n-seg.pt",
+    "yolo11s.pt": "yolo11s-seg.pt",
+    "yolo11m.pt": "yolo11m-seg.pt",
+    "yolov8n.pt": "yolov8n-seg.pt",
+    "yolov8s.pt": "yolov8s-seg.pt",
+}
 TRACKER_ALIASES = {
     "bytetrack": "bytetrack.yaml",
     "botsort": "botsort.yaml",
@@ -210,6 +218,7 @@ def run_track(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     include_saliency: bool = True,
     include_audio_levels: bool = True,
+    include_masks: bool = True,
 ):
     video_path = Path(video_path)
     if not video_path.is_file():
@@ -229,6 +238,8 @@ def run_track(
     model_name = MODEL_ALIASES.get(model.lower(), model)
     if not model_name.endswith(".pt"):
         model_name = model_name + ".pt"
+    if include_masks:
+        model_name = SEGMENT_MODEL_ALIASES.get(model_name, model_name.replace(".pt", "-seg.pt"))
     tracker_cfg = TRACKER_ALIASES.get(tracker, tracker)
 
     model_obj = _get_model(model_name)
@@ -282,6 +293,27 @@ def run_track(
             saliency = _compute_saliency_map(r.orig_img)
             if saliency is not None:
                 frame_data["saliency"] = saliency
+        if include_masks and r.masks is not None and hasattr(r.masks, "xy"):
+            import numpy as np
+            masks_xy = r.masks.xy
+            h, w = (r.orig_img.shape[:2] if hasattr(r, "orig_img") and r.orig_img is not None else (0, 0))
+            masks_list = []
+            for i in range(len(masks_xy)):
+                contour = masks_xy[i]
+                if contour is None or (hasattr(contour, "size") and contour.size == 0):
+                    masks_list.append([])
+                    continue
+                arr = np.asarray(contour)
+                if arr.ndim != 2 or arr.shape[1] != 2:
+                    masks_list.append([])
+                    continue
+                pts = arr.tolist()
+                if h > 0 and w > 0 and len(pts) > 0:
+                    mx, my = max(p[0] for p in pts), max(p[1] for p in pts)
+                    if mx <= 1.0 and my <= 1.0:
+                        pts = [[p[0] * w, p[1] * h] for p in pts]
+                masks_list.append(pts)
+            frame_data["masks"] = masks_list
         frames[frame_idx] = frame_data
 
     result = {

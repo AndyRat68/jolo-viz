@@ -16,11 +16,13 @@ function App() {
   const [audioGraphHeightRatio, setAudioGraphHeightRatio] = useState(0.2);
   const [graphCategoryVisible, setGraphCategoryVisible] = useState<GraphCategoryVisible>(() => ({ ...DEFAULT_GRAPH_CATEGORY_VISIBLE }));
   const [showSaliency, setShowSaliency] = useState(true);
+  const [showMasks, setShowMasks] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [trackProgress, setTrackProgress] = useState<TrackProgress | null>(null);
 
   const fps = trackResult?.fps ?? 30;
@@ -28,32 +30,43 @@ function App() {
   const currentFrame = trackProgress?.current_frame ?? 0;
 
   const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setError(null);
       setUploading(true);
       setUploadPercent(0);
-      try {
-        const { video_id } = await uploadVideo(file, (p) => setUploadPercent(p));
-        setVideoId(video_id);
-        setTrackResult(null);
-        setUploading(false);
-        setUploadPercent(null);
-        setLoading(true);
-        setTrackProgress(null);
-        const result = await runTrack(video_id, params, (p) => setTrackProgress(p));
-        setTrackResult(result);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setVideoId(null);
-        setTrackResult(null);
-      } finally {
-        setUploading(false);
-        setUploadPercent(null);
-        setLoading(false);
-        setTrackProgress(null);
-      }
+      setSelectedFileName(file.name);
+      // Yield so React paints "Uploading…" before we start; then run upload + track
+      const fileRef = file;
+      const paramsRef = params;
+      const run = async () => {
+        try {
+          const { video_id } = await uploadVideo(fileRef, (p) => setUploadPercent(p));
+          setVideoId(video_id);
+          setTrackResult(null);
+          setUploading(false);
+          setUploadPercent(null);
+          setSelectedFileName(null);
+          setLoading(true);
+          setTrackProgress(null);
+          const result = await runTrack(video_id, paramsRef, (p) => setTrackProgress(p));
+          setTrackResult(result);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+          setVideoId(null);
+          setTrackResult(null);
+        } finally {
+          setUploading(false);
+          setUploadPercent(null);
+          setSelectedFileName(null);
+          setLoading(false);
+          setTrackProgress(null);
+        }
+      };
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => run());
+      });
     },
     [params]
   );
@@ -92,7 +105,7 @@ function App() {
               disabled={uploading || loading}
             />
             {uploading
-              ? `Uploading… ${uploadPercent != null ? uploadPercent + "%" : ""}`
+              ? `Uploading… ${uploadPercent != null ? uploadPercent + "%" : "0%"}`
               : loading
                 ? "Tracking…"
                 : "Select MP4"}
@@ -108,23 +121,25 @@ function App() {
           <div className="status-row">
             <span className="status-text">
               {uploading
-                ? `Uploading… ${uploadPercent != null ? uploadPercent + "%" : ""}`
+                ? (selectedFileName ? `Uploading ${selectedFileName}… ${uploadPercent != null ? uploadPercent + "%" : "0%"}` : `Uploading… ${uploadPercent != null ? uploadPercent + "%" : "0%"}`)
                 : loading && trackProgress
                   ? (trackProgress.message || `Frame ${trackProgress.current_frame} / ${trackProgress.total_frames}`)
                   : "Running tracking…"}
             </span>
             <progress
               className="status-progress"
-              value={uploading && uploadPercent != null ? uploadPercent : loading ? currentFrame : undefined}
+              value={uploading ? (uploadPercent ?? 0) : loading ? currentFrame : undefined}
               max={uploading ? 100 : totalFrames}
             >
-              {uploading && uploadPercent != null ? `${uploadPercent}%` : loading ? `${currentFrame} / ${totalFrames}` : "…"}
+              {uploading ? `${uploadPercent ?? 0}%` : loading ? `${currentFrame} / ${totalFrames}` : "…"}
             </progress>
           </div>
         )}
         {loading && (
           <p className="loading-status-hint">
-            This can take several minutes. First run may download the YOLO model (~6MB). Check backend terminal for progress.
+            This can take several minutes. First run may download the YOLO model (~6MB).
+            {params.include_masks && " Generate masks uses a segment model and may take longer."}
+            {" "}Check backend terminal for progress.
           </p>
         )}
         {error && <p className="error">{error}</p>}
@@ -143,6 +158,7 @@ function App() {
             audioGraphHeightRatio={audioGraphHeightRatio}
             graphCategoryVisible={graphCategoryVisible}
             showSaliency={showSaliency}
+            showMasks={showMasks}
           />
           {loading && (
             <div className="loading-overlay">
@@ -172,6 +188,8 @@ function App() {
             }
             showSaliency={showSaliency}
             onShowSaliencyChange={setShowSaliency}
+            showMasks={showMasks}
+            onShowMasksChange={setShowMasks}
             onApply={handleApply}
             loading={loading}
             disabled={!videoId}
